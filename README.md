@@ -39,9 +39,10 @@ MIT. Check `LICENSE` for more information.
 ## Citation
 
 ```bibtex
-@inproceedings{yang2024sweagent,
+@inproceedings{lauffer2026oec,
   title={Imitation Learning for Multi-turn LM Agents via On-policy Expert Corrections},
   author={Niklas Lauffer and Xiang Deng and Srivatsa Kundurthy and Brad Kenstler and Jeff Da},
-  year={2025},
+  booktitle={Proceedings of the 43rd International Conference on Machine Learning},
+  year={2026},
 }
 ```
