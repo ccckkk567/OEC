@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import re
+import shlex
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -299,7 +300,22 @@ class ToolHandler:
                 f"export PATH=/root/tools/{bundle.path.name}/bin:$PATH",
                 f"chmod +x /root/tools/{bundle.path.name}/bin/*",
             ]
-            if (bundle.path / "install.sh").exists():
+            tool_python = self.config.env_variables.get("SWE_AGENT_TOOL_PYTHON")
+            if tool_python and bundle.path.name in {"registry", "edit_anthropic"}:
+                if not str(tool_python).startswith("/"):
+                    raise ValueError("SWE_AGENT_TOOL_PYTHON must be an absolute container path")
+                interpreter = shlex.quote(str(tool_python))
+                cmds.append(f"test -x {interpreter}")
+                # The external tool interpreter already contains the editor dependencies.
+                for entry in (bundle.path / "bin").iterdir():
+                    if not entry.is_file() or not entry.read_bytes().startswith(b"#!/usr/bin/env python"):
+                        continue
+                    target = f"/root/tools/{bundle.path.name}/bin/{entry.name}"
+                    script = target + ".py"
+                    env.communicate(f"mv -f {shlex.quote(target)} {shlex.quote(script)}", check="raise")
+                    env.write_file(target, "#!/bin/sh\nexport PYTHONPATH=/root/tools/registry/lib\n"
+                                   + f'exec {interpreter} {shlex.quote(script)} "$@"\n')
+            elif (bundle.path / "install.sh").exists():
                 cmds.append(f"cd /root/tools/{bundle.path.name} && source install.sh")
             cmds.append(f"chmod +x /root/tools/{bundle.path.name}/bin/*")
             env.communicate(

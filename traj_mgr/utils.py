@@ -8,13 +8,15 @@ import hashlib
 import string
 import yaml
 
-from on_policy_expert_corrections import REPO_DIR
+from pathlib import Path
+
+REPO_DIR = Path(__file__).resolve().parents[1]
 
 XML_STR_REPLACES = ["old_str", "new_str", "file_text"]
 
 
 SYSTEM_PROMPT = yaml.safe_load(
-    (REPO_DIR / "config" / "swesmith_infer.yaml").read_text()
+    (REPO_DIR / "config" / "swesmith_infer.yaml").read_text(encoding="utf-8")
 )["agent"]["templates"]["system_template"]
 
 
@@ -83,8 +85,36 @@ def tool_call_to_action(tool_calls: None | list[dict]) -> list[str]:
     return actions
 
 
+def trajectory_model(traj):
+    config = traj.get("replay_config") or {}
+    if isinstance(config, str):
+        config = json.loads(config)
+    return config.get("agent", {}).get("model", {}).get("name") or traj.get("model")
+
+
 def transform_traj_xml(traj: dict) -> dict:
-    switch_idx = int(traj.get("model_switch_idx", 0))
+    assistants = [m for m in get_messages(traj) if m and m["role"] == "assistant"]
+    owners = traj.get("assistant_model_indices")
+    if owners is not None:
+        if len(owners) != len(assistants) or any(i is not None and (type(i) != int or i < 0) for i in owners):
+            raise ValueError("Invalid assistant model ownership metadata")
+        targets = [idx is not None and idx > 0 for idx in owners]
+        switch_idx = next((i for i, target in enumerate(targets) if target), None)
+        if traj.get("model_switch_idx") != switch_idx:
+            raise ValueError("Inconsistent model switch index")
+    else:
+        if "model_switch_idx" in traj:
+            value = traj["model_switch_idx"]
+            switch_idx = int(value) if value is not None else None
+        else:
+            model = trajectory_model(traj)
+            if not model or model == "switching" or "switch_points" in traj:
+                raise ValueError("Missing switching metadata or identifiable single-model provenance")
+            switch_idx = 0
+        targets = [switch_idx is not None and 0 <= switch_idx <= i and not msg.get("is_demo")
+                   and not msg["content"].startswith("Exit due to") for i, msg in enumerate(assistants)]
+    if not any(targets):
+        raise ValueError("No retained expert response in this trajectory")
     new_traj = []
     num_assistant_messages = 0
     for message in get_messages(traj):
@@ -93,7 +123,7 @@ def transform_traj_xml(traj: dict) -> dict:
         role = message["role"] if message["role"] != "tool" else "user"
         mask_input_ids = True
         if message["role"] == "assistant":
-            mask_input_ids = num_assistant_messages < switch_idx
+            mask_input_ids = not targets[num_assistant_messages]
             num_assistant_messages += 1
             if message["content"].startswith("Exit due to"):
                 content = (

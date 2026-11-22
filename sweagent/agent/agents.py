@@ -479,6 +479,7 @@ class DefaultAgent(AbstractAgent):
         #: solved the problem.
         self.history = []
         self._trajectory = []
+        self._response_owners: list[tuple[dict, int]] = []
         self.info = AgentInfo()
 
         self._chook = CombinedAgentHook()
@@ -893,6 +894,9 @@ class DefaultAgent(AbstractAgent):
             },
         )
 
+        if "response_model_idx" in step.extra_info:
+            self._response_owners.append((self.history[-1], step.extra_info["response_model_idx"]))
+
         elided_chars = 0
         if step.observation.strip() == "":
             # Show no output template if observation content was empty
@@ -941,6 +945,20 @@ class DefaultAgent(AbstractAgent):
             }
         )
         attempt_data["replay_config"] = self.replay_config.model_dump_json() if self.replay_config is not None else None
+        from sweagent.agent.switching_model import SwitchingModel
+
+        if isinstance(self.model, SwitchingModel):
+            # Read the retained history after retries and any template rewrites.
+            # Demonstrations and synthetic exit steps have no generating model.
+            owners = {id(message): idx for message, idx in self._response_owners}
+            indices = [owners.get(id(message)) for message in self.history if message["role"] == "assistant"]
+            attempt_data["assistant_model_indices"] = indices
+            attempt_data["model_switch_idx"] = next(
+                (i for i, idx in enumerate(indices) if idx is not None and idx > 0), None
+            )
+            attempt_data["switch_points"] = copy.deepcopy(self.model.switch_points)
+        elif model_name := getattr(getattr(self.model, "config", None), "name", None):
+            attempt_data["model"] = model_name
         attempt_data["environment"] = self._env.name
         return attempt_data
 
@@ -1208,6 +1226,9 @@ class DefaultAgent(AbstractAgent):
                 step.extra_info.update(best.extra_info)
             else:
                 output = self.model.query(history)  # type: ignore
+            if "response_model_idx" in output:
+                step.extra_info.update(response_model_idx=output["response_model_idx"],
+                                       response_model_name=output["response_model_name"])
             step.output = output["message"]
             # todo: Can't I override the parser in __init__?
             step.thought, step.action = self.tools.parse_actions(output)

@@ -34,7 +34,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from swebench.harness.constants import KEY_INSTANCE_ID, LOG_REPORT
 from traj_mgr.utils import generate_hash
-from traj_mgr.utils import MAP_STYLE_TO_FUNC
+from traj_mgr.utils import MAP_STYLE_TO_FUNC, trajectory_model
 from tqdm.auto import tqdm
 from typing import Optional, Tuple
 
@@ -69,13 +69,10 @@ def process_single_trajectory(
         traj = transform_traj(traj_orig)
         traj[KEY_INSTANCE_ID] = folder
         traj["resolved"] = is_resolved
-        if "replay_config" in traj_orig:
-            traj["model"] = json.loads(traj_orig["replay_config"])["agent"]["model"][
-                "name"
-            ]
+        if model := trajectory_model(traj_orig):
+            traj["model"] = model
         traj["traj_id"] = f"{folder}.{generate_hash(str(traj_dir))}"
         traj["patch"] = pred_path.read_text() if pred_path.exists() else ""
-        traj["model_switch_idx"] = traj["model_switch_idx"] if "model_switch_idx" in traj else 0
 
         return (folder, traj)
     except Exception as e:

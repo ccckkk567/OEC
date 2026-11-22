@@ -58,6 +58,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+!/tools/registry/lib/
+!/tools/registry/lib/registry.py
 lib64/
 parts/
 sdist/

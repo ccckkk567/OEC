@@ -146,7 +146,8 @@ class SimpleBatchInstance(BaseModel):
                 env=EnvironmentConfig(deployment=deployment, repo=repo), problem_statement=problem_statement
             )
 
-        deployment.image = self.image_name  # type: ignore
+        if hasattr(deployment, "image"):
+            deployment.image = self.image_name
 
         if isinstance(deployment, DockerDeploymentConfig) and deployment.python_standalone_dir is None:
             # Note: you can disable this by setting python_standalone_dir to ""

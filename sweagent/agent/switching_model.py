@@ -225,7 +225,11 @@ class SwitchingModel(AbstractModel):
                 f"Tokens: {self.stats.tokens_sent + self.stats.tokens_received}"
             )
         
-        return result
+        # Keep provenance with the returned completion, even if a sampler picks it later.
+        owner = {"response_model_idx": self.current_model_idx, "response_model_name": self.current_model_name}
+        if isinstance(result, list):
+            return [response | owner for response in result]
+        return result | owner
     
     def reset_stats(self) -> None:
         """Reset stats for all models"""
